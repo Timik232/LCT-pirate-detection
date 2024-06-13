@@ -96,7 +96,7 @@ def get_video_embeddings(filename, model_l, feature_extractor_l):
     segment_index = 0
     while start_time < video_duration:
         end_time = min(start_time + segment_duration, video_duration)
-        if end_time - start_time != segment_duration :
+        if end_time - start_time != segment_duration:
             start_time += segment_duration
             continue
         segment = video.subclip(start_time, end_time)
@@ -117,21 +117,18 @@ def get_video_embeddings(filename, model_l, feature_extractor_l):
             "segments": segments, "filenames": filenames}
 
 
-def create_lance_table():
+def create_lance_table(table_name, vector_dim):
     schema = pa.schema([
-        ('embedding', pa.list_(pa.float64())),
+        ('vector', pa.list_(pa.float64(), vector_dim)),
         ('segment_time', pa.int64()),
         ('filename', pa.string())
     ])
+    print(f"Vector dim {vector_dim}")
     db_path = "data/"
-    if os.path.exists(db_path):
-        return lancedb.connect(db_path)
-    os.makedirs(db_path)
-    video_table_name = "video_embeddings"
-    audio_table_name = "audio_embeddings"
+    if not os.path.exists(db_path):
+        os.makedirs(db_path)
     db = lancedb.connect(db_path)
-    _ = db.create_table(video_table_name, schema=schema)
-    _ = db.create_table(audio_table_name, schema=schema)
+    _ = db.create_table(table_name, schema=schema)
     return db
 
 
@@ -152,16 +149,20 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 model.eval()
 
-database = create_lance_table()
 
 dict_data = get_video_embeddings("ded3d179001b3f679a0101be95405d2c.mp4",
                                  model, feature_extractor)
 dict_data_1 = get_video_embeddings("f4b1fd188fe77f9f56de07e867128b13.mp4",
                                    model, feature_extractor)
 
+_ = create_lance_table("video_embeddings", len(dict_data["video"][0]))
+database = create_lance_table("audio_embeddings", len(dict_data["audio"][0]))
+
 append_vector_to_table(database, "video_embeddings", dict_data["video"], dict_data["segments"], dict_data["filenames"])
 append_vector_to_table(database, "audio_embeddings", dict_data["audio"], dict_data["segments"], dict_data["filenames"])
-table = database.open_table("video_embeddings")
-df = table.to_pandas()
-for batch in dict_data["video"]:
-    print(record)
+table_video = database.open_table("video_embeddings")
+table_audio = database.open_table("audio_embeddings")
+percent_video = 0
+percent_audio = 0
+for batch in dict_data_1["video"]:
+    result = table_video.search(batch, vector_column_name="vector").limit(10).to_list()
