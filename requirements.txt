@@ -1,0 +1,10 @@
+lancedb
+pyarrow
+moviepy
+opencv-python
+pillow
+torch
+librosa
+numpy
+transformers
+decorator==4.0.2
