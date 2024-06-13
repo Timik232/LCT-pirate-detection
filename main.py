@@ -128,7 +128,8 @@ def create_lance_table(table_name, vector_dim):
     if not os.path.exists(db_path):
         os.makedirs(db_path)
     db = lancedb.connect(db_path)
-    _ = db.create_table(table_name, schema=schema)
+    if table_name not in db.table_names():
+        _ = db.create_table(table_name, schema=schema)
     return db
 
 
@@ -164,5 +165,10 @@ table_video = database.open_table("video_embeddings")
 table_audio = database.open_table("audio_embeddings")
 percent_video = 0
 percent_audio = 0
-for batch in dict_data_1["video"]:
-    result = table_video.search(batch, vector_column_name="vector").limit(10).to_list()
+min_dist = 1
+for batch in dict_data["video"]:
+    result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+    if result[0]["_distance"] < min_dist:
+        min_dist = result[0]["_distance"]
+
+    print(min_dist)
