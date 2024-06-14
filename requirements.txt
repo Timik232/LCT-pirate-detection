@@ -9,3 +9,6 @@ numpy
 transformers
 decorator==4.0.2
 panns-inference
+scikit-learn
+matplotlib
+scipy

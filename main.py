@@ -5,12 +5,152 @@ import librosa
 import numpy as np
 import pyarrow as pa
 import moviepy.editor as mp
+import operator
 import cv2
 from PIL import Image
 import torch
 from transformers import ViTModel, ViTFeatureExtractor
 from panns_inference import AudioTagging
-model_audio =AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+
+from scipy.interpolate import PchipInterpolator
+from scipy.signal import find_peaks, peak_widths
+
+model_audio = AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def make_plt_rows(matrix_l):
+    points_dict = {}
+
+    # Проходимся по строкам матрицы косинусных расстояний
+    for i in range(max(matrix_l.shape[0], matrix_l.shape[1])):
+        points_dict[i] = 0
+    max_value_global = np.max(np.abs(matrix_l))
+    mean_value_global = np.mean(np.abs(matrix_l))
+    for i in range(matrix_l.shape[0]):
+        max_index = np.argmax(matrix_l[i])
+        max_value = matrix_l[i, max_index]
+        points_dict[max_index] = max_value
+
+    print(points_dict)
+    # Преобразуем словарь в списки для построения графика
+    x_points = list(points_dict.keys())
+    y_points = list(points_dict.values())
+    # Убедимся, что все значения y положительны
+    y_points = np.maximum(y_points, 0)
+
+    sorted_indices = np.argsort(x_points)
+    print(max(x_points))
+    x_points = np.take(np.array(x_points), sorted_indices)
+    y_points = np.take(np.array(y_points), sorted_indices)
+    print(max(x_points))
+
+    def moving_average(data, window_size):
+        return np.convolve(data, np.ones(window_size) / window_size, mode='same')
+
+    window_size = max(int(y_points.shape[0] * 0.05), 3)
+    y_points_smoothed = moving_average(y_points, window_size)
+
+    f_interp = PchipInterpolator(x_points, y_points_smoothed)
+    x_smooth = np.linspace(x_points.min(), x_points.max(), len(x_points))
+    y_smooth = f_interp(x_smooth)
+
+    peaks, _ = find_peaks(y_smooth)
+    widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
+
+    max_peak_idx = np.argmax(y_smooth[peaks])
+    max_peak_height = y_smooth[peaks][max_peak_idx]
+
+    max_width_idx = np.argmax(widths_half_max[0])
+    max_peak_width = widths_half_max[0][max_width_idx]
+    left_ips_x = 0
+    right_ips_x = 0
+    if peaks[max_peak_idx] == peaks[max_width_idx]:
+        print(f"Пик одновременно самый высокий и самый широкий: высота={max_peak_height}, ширина={max_peak_width}")
+
+        left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
+        right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
+
+        print(f"Границы пика относительно оси x: {left_ips_x}, {right_ips_x}")
+    elif peaks[max_width_idx]:  #and widths_half_max[0][max_peak_idx] > 50:
+        left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
+        right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
+
+        print(f"Границы пика относительно оси x: {left_ips_x}, {right_ips_x}")
+    plt.plot(x_smooth, y_smooth)
+    plt.xlabel('Index of Minimum Cosine Distance')
+    plt.ylabel('Sum of Max Value - Min Value')
+    plt.title('Graph of Minimum Cosine Distances with Peaks')
+    plt.grid(True)
+    plt.show()
+    return f"{left_ips_x}-{right_ips_x}"
+
+
+def make_plt_columns(matrix_l):
+    points_dict = {}
+    for j in range(max(matrix_l.shape[0], matrix_l.shape[1])):
+        points_dict[j] = 0
+    print(matrix_l.shape[1])
+    max_value_global = np.max(np.abs(matrix_l))
+    mean_value_global = np.mean(np.abs(matrix_l))
+    # Проходимся по строкам матрицы косинусных расстояний
+    for j in range(matrix_l.shape[1]):
+        max_index = np.argmax(matrix_l[:, j])
+        max_value = matrix_l[max_index, j]
+        points_dict[max_index] = max_value
+
+    x_points = list(points_dict.keys())
+    y_points = list(points_dict.values())
+
+    sorted_indices = np.argsort(x_points)
+    print(max(x_points))
+    x_points = np.take(np.array(x_points), sorted_indices)
+    y_points = np.take(np.array(y_points), sorted_indices)
+    print(max(x_points))
+
+    def moving_average(data, window_size):
+        return np.convolve(data, np.ones(window_size) / window_size, mode='same')
+
+    window_size = max(int(y_points.shape[0] * 0.05), 3)
+    y_points_smoothed = moving_average(y_points, window_size)
+
+    f_interp = PchipInterpolator(x_points, y_points_smoothed)
+    x_smooth = np.linspace(x_points.min(), x_points.max(), len(x_points))
+    y_smooth = f_interp(x_smooth)
+
+    peaks, _ = find_peaks(y_smooth)
+    widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
+
+    max_peak_idx = np.argmax(y_smooth[peaks])
+    max_peak_height = y_smooth[peaks][max_peak_idx]
+
+    max_width_idx = np.argmax(widths_half_max[0])
+    max_peak_width = widths_half_max[0][max_width_idx]
+    left_ips_x = 0
+    right_ips_x = 0
+    if peaks[max_peak_idx] == peaks[max_width_idx]:
+        print(f"Пик одновременно самый высокий и самый широкий: высота={max_peak_height}, ширина={max_peak_width}")
+
+        left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
+        right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
+
+        print(f"Границы пика относительно оси x: {left_ips_x}, {right_ips_x}")
+    elif peaks[max_width_idx]:  #and widths_half_max[0][max_peak_idx] > 50#:
+        left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
+        right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
+
+        print(f"Границы пика относительно оси x: {left_ips_x}, {right_ips_x}")
+
+    plt.plot(x_smooth, y_smooth)
+    plt.xlabel('Index of Minimum Cosine Distance')
+    plt.ylabel('Sum of Max Value - Min Value')
+    plt.title('Graph of Minimum Cosine Distances with Peaks')
+    plt.grid(True)
+    plt.show()
+    return f"{left_ips_x}-{right_ips_x}"
+
+
 def get_embeddings_vit(frames, feature_extractor_l, model_l):
     # Преобразуем кадры из формата OpenCV в формат PIL
     images = [Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) for frame in frames]
@@ -49,10 +189,10 @@ def extract_frame_embeddings_vit(video_path, model_l, feature_extractor_l, frame
     return outputs.detach().cpu().squeeze().numpy()
 
 
-def get_sound_embedding(audio_path):
+def get_sound_embedding(audio_path, n=10):
     (audio, _) = librosa.core.load(audio_path, sr=44100, mono=True)
     _, emb = model_audio.inference(audio[None, :])
-    return np.array(emb)
+    return np.array([emb[0]] * n)
 
 
 def extract_audio_from_mp4(file_path):
@@ -64,8 +204,8 @@ def extract_audio_from_mp4(file_path):
 
 
 def get_video_embeddings(filename, model_l, feature_extractor_l):
-    video_embeddings_l = np.array([])
-    audio_embeddings_l = np.array([])
+    video_embeddings_l = np.array([]).reshape(0, 768)
+    audio_embeddings_l = np.array([]).reshape(0, 2048)
     segments = []
     filenames = []
     video = mp.VideoFileClip(filename)
@@ -80,16 +220,16 @@ def get_video_embeddings(filename, model_l, feature_extractor_l):
             continue
         segment = video.subclip(start_time, end_time)
         segment.write_videofile("temp_segment.mp4", fps=video.fps)
-        stack = np.vstack
-        if len(audio_embeddings_l) == 0:
-            stack = np.hstack
-        audio_embeddings_l = stack((audio_embeddings_l,
-                                    get_sound_embedding(extract_audio_from_mp4("temp_segment.mp4")).flatten()))
-        video_embeddings_l = stack((video_embeddings_l,
-                                    extract_frame_embeddings_vit("temp_segment.mp4", model_l,
-                                                                 feature_extractor_l).flatten()))
-        segments.append(segment_index)
-        filenames.append(filename)
+        # stack = np.vstack
+        # if len(audio_embeddings_l) == 0:
+        #     stack = np.hstack
+        audio_embeddings_l = np.concatenate((audio_embeddings_l,
+                                             get_sound_embedding(extract_audio_from_mp4("temp_segment.mp4"))), axis=0)
+        video_embeddings_l = np.concatenate((video_embeddings_l,
+                                             extract_frame_embeddings_vit("temp_segment.mp4", model_l,
+                                                                          feature_extractor_l)), axis=0)
+        segments.extend([segment_index] * 10)
+        filenames.extend([filename] * 10)
         start_time += segment_duration
         segment_index += 1
     return {"video": np.array(video_embeddings_l), "audio": np.array(audio_embeddings_l),
@@ -115,7 +255,7 @@ def create_lance_table(table_name, vector_dim):
 def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, segments, filenames):
     table = db.open_table(table_name)
 
-    for i in range(len(vector)):
+    for i in range(len(segments)):
         segment_time_array = pa.array([segments[i]])
         filename_array = pa.array([filenames[i]])
         vector_array = pa.array([vector[i]])
@@ -128,7 +268,6 @@ feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 model.eval()
-
 
 dict_data = get_video_embeddings("ydcrodwtz3mstjq1vhbdflx6kyhj3y0p.mp4",
                                  model, feature_extractor)
@@ -145,20 +284,30 @@ append_vector_to_table(database, "audio_embeddings", dict_data_1["audio"],
 
 table_video = database.open_table("video_embeddings")
 table_audio = database.open_table("audio_embeddings")
-percent_video = 0
-percent_audio = 0
-threshold = 0.6
+threshold_video = 0.6
+threshold_audio = 0.08
+percent_dict = {}
 for batch in dict_data["video"]:
     result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    if result[0]["_distance"] < threshold:
-        percent_video += 1
-    print(result[0]["_distance"], "-", result[0]["segment_time"])
+    if not percent_dict.get(result[0]["filename"]):
+        percent_dict[result[0]["filename"]] = 1
+    else:
+        percent_dict[result[0]["filename"]] += 1
 print("-" * 40)
 
 for batch in dict_data["audio"]:
     result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    if result[0]["_distance"] < threshold:
-        percent_audio += 1
-    print(result[0]["_distance"], "-", result[0]["segment_time"])
-print(percent_video / len(dict_data["video"]))
-print(percent_audio / len(dict_data["audio"]))
+    if result[0]["_distance"] < threshold_audio:
+        if not percent_dict.get(result[0]["filename"]):
+            percent_dict[result[0]["filename"]] = 1
+        else:
+            percent_dict[result[0]["filename"]] += 1
+for key, _ in percent_dict.items():
+    percent_dict[key] = percent_dict[key] / (len(dict_data["video"] * 2))
+print(percent_dict)
+matrix = cosine_similarity(dict_data["video"], dict_data_1["video"])
+matrix_audio = cosine_similarity(dict_data["audio"], dict_data_1["audio"])
+martix = matrix + matrix_audio
+print(max(percent_dict.items(), key=operator.itemgetter(1))[0])
+make_plt_rows(matrix)
+make_plt_columns(matrix)
