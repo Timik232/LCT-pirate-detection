@@ -9,8 +9,8 @@ import cv2
 from PIL import Image
 import torch
 from transformers import ViTModel, ViTFeatureExtractor
-
-
+from panns_inference import AudioTagging
+model_audio =AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
 def get_embeddings_vit(frames, feature_extractor_l, model_l):
     # Преобразуем кадры из формата OpenCV в формат PIL
     images = [Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) for frame in frames]
@@ -50,30 +50,9 @@ def extract_frame_embeddings_vit(video_path, model_l, feature_extractor_l, frame
 
 
 def get_sound_embedding(audio_path):
-    sr = 22050
-    y, sr = librosa.load(audio_path, sr=sr)
-
-    # Длина одного фрейма в секундах
-    frame_length = sr
-
-    # Количество фреймов (секунд) в аудиофайле
-    num_frames = len(y) // frame_length
-
-    spectrograms = []
-
-    for i in range(num_frames):
-        # Извлечь одну секунду аудио
-        frame = y[i * frame_length: (i + 1) * frame_length]
-
-        # Преобразовать в спектрограмму
-        spectrogram = librosa.feature.melspectrogram(y=frame, sr=sr)
-
-        # Преобразовать спектрограмму в логарифмическую шкалу
-        log_spectrogram = librosa.power_to_db(spectrogram, ref=np.max)
-        flat_spectrogram = log_spectrogram.flatten()
-        spectrograms.append(flat_spectrogram)
-
-    return np.array(spectrograms)
+    (audio, _) = librosa.core.load(audio_path, sr=44100, mono=True)
+    _, emb = model_audio.inference(audio[None, :])
+    return np.array(emb)
 
 
 def extract_audio_from_mp4(file_path):
@@ -151,24 +130,35 @@ model.to(device)
 model.eval()
 
 
-dict_data = get_video_embeddings("ded3d179001b3f679a0101be95405d2c.mp4",
+dict_data = get_video_embeddings("ydcrodwtz3mstjq1vhbdflx6kyhj3y0p.mp4",
                                  model, feature_extractor)
-dict_data_1 = get_video_embeddings("f4b1fd188fe77f9f56de07e867128b13.mp4",
+dict_data_1 = get_video_embeddings("ded3d179001b3f679a0101be95405d2c.mp4",
                                    model, feature_extractor)
 
-_ = create_lance_table("video_embeddings", len(dict_data["video"][0]))
-database = create_lance_table("audio_embeddings", len(dict_data["audio"][0]))
+_ = create_lance_table("video_embeddings", len(dict_data_1["video"][0]))
+database = create_lance_table("audio_embeddings", len(dict_data_1["audio"][0]))
 
-append_vector_to_table(database, "video_embeddings", dict_data["video"], dict_data["segments"], dict_data["filenames"])
-append_vector_to_table(database, "audio_embeddings", dict_data["audio"], dict_data["segments"], dict_data["filenames"])
+append_vector_to_table(database, "video_embeddings", dict_data_1["video"],
+                       dict_data_1["segments"], dict_data_1["filenames"])
+append_vector_to_table(database, "audio_embeddings", dict_data_1["audio"],
+                       dict_data_1["segments"], dict_data_1["filenames"])
+
 table_video = database.open_table("video_embeddings")
 table_audio = database.open_table("audio_embeddings")
 percent_video = 0
 percent_audio = 0
-min_dist = 1
+threshold = 0.6
 for batch in dict_data["video"]:
     result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    if result[0]["_distance"] < min_dist:
-        min_dist = result[0]["_distance"]
+    if result[0]["_distance"] < threshold:
+        percent_video += 1
+    print(result[0]["_distance"], "-", result[0]["segment_time"])
+print("-" * 40)
 
-    print(min_dist)
+for batch in dict_data["audio"]:
+    result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+    if result[0]["_distance"] < threshold:
+        percent_audio += 1
+    print(result[0]["_distance"], "-", result[0]["segment_time"])
+print(percent_video / len(dict_data["video"]))
+print(percent_audio / len(dict_data["audio"]))
