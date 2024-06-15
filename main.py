@@ -237,8 +237,10 @@ def extract_audio_from_mp4(file_path: str, temp_dir) -> str:
     :return: path to the new file
     """
     video = mp.VideoFileClip(file_path)
+
     temp_audio_path = os.path.join(temp_dir.name, "temp_audio.wav")
     video.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
+    video.close()
 
     return temp_audio_path
 
@@ -261,27 +263,30 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
     start_time = 0
     segment_index = 0
     temp_dir = tempfile.TemporaryDirectory()
-    while start_time < video_duration:
-        end_time = min(start_time + segment_duration, video_duration)
-        if end_time - start_time != segment_duration:
+    try:
+        while start_time < video_duration:
+            end_time = min(start_time + segment_duration, video_duration)
+            if end_time - start_time != segment_duration:
+                start_time += segment_duration
+                continue
+            segment = video.subclip(start_time, end_time)
+            temp_video_path = os.path.join(temp_dir.name, "temp_segment.mp4")
+            segment.write_videofile(temp_video_path, fps=video.fps)
+            # stack = np.vstack
+            # if len(audio_embeddings_l) == 0:
+            #     stack = np.hstack
+            audio_embeddings_l = np.concatenate((audio_embeddings_l,
+                                                 get_sound_embedding(extract_audio_from_mp4(temp_video_path, temp_dir))), axis=0)
+            video_embeddings_l = np.concatenate((video_embeddings_l,
+                                                 extract_frame_embeddings_vit(temp_video_path, model_l,
+                                                                              feature_extractor_l)), axis=0)
+            segments.extend([segment_index] * 10)
+            filenames.extend([filename] * 10)
             start_time += segment_duration
-            continue
-        segment = video.subclip(start_time, end_time)
-        temp_video_path = os.path.join(temp_dir.name, "temp_segment.mp4")
-        segment.write_videofile(temp_video_path, fps=video.fps)
-        # stack = np.vstack
-        # if len(audio_embeddings_l) == 0:
-        #     stack = np.hstack
-        audio_embeddings_l = np.concatenate((audio_embeddings_l,
-                                             get_sound_embedding(extract_audio_from_mp4(temp_video_path, temp_dir))), axis=0)
-        video_embeddings_l = np.concatenate((video_embeddings_l,
-                                             extract_frame_embeddings_vit(temp_video_path, model_l,
-                                                                          feature_extractor_l)), axis=0)
-        segments.extend([segment_index] * 10)
-        filenames.extend([filename] * 10)
-        start_time += segment_duration
-        segment_index += 1
-    temp_dir.cleanup()
+            segment_index += 1
+    finally:
+        video.close()
+        temp_dir.cleanup()
     return {"video": np.array(video_embeddings_l), "audio": np.array(audio_embeddings_l),
             "segments": segments, "filenames": filenames}
 
