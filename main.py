@@ -491,7 +491,7 @@ def check_similarity(model, feature_extractor):
     print(percent_dict)
     matrix = cosine_similarity(dict_data["video"], dict_data_1["video"])
     matrix_audio = cosine_similarity(dict_data["audio"], dict_data_1["audio"])
-    martix = matrix + matrix_audio
+    matrix = matrix + matrix_audio
     print(max(percent_dict.items(), key=operator.itemgetter(1))[0]) # add threshold for final result
     make_plt_rows(matrix)
     make_plt_columns(matrix)
