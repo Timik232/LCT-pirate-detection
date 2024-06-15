@@ -289,10 +289,11 @@ threshold_audio = 0.08
 percent_dict = {}
 for batch in dict_data["video"]:
     result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    if not percent_dict.get(result[0]["filename"]):
-        percent_dict[result[0]["filename"]] = 1
-    else:
-        percent_dict[result[0]["filename"]] += 1
+    if result[0]["_distance"] < threshold_audio:
+        if not percent_dict.get(result[0]["filename"]):
+            percent_dict[result[0]["filename"]] = 1
+        else:
+            percent_dict[result[0]["filename"]] += 1
 print("-" * 40)
 
 for batch in dict_data["audio"]:
