@@ -217,8 +217,8 @@ def extract_frame_embeddings_vit(video_path: str, model_l, feature_extractor_l, 
     return outputs.detach().cpu().squeeze().numpy()
 
 
-def get_sound_embedding(audio_path, start_time, end_time, n=10):
-    (audio, _) = librosa.core.load(audio_path, sr=44100, mono=True)
+def get_sound_embedding(audio, start_time, end_time, n=10):
+
     start_sample = int(start_time * 44100)
     end_sample = int(end_time * 44100)
 
@@ -227,7 +227,7 @@ def get_sound_embedding(audio_path, start_time, end_time, n=10):
     return np.array([emb[0]] * n)
 
 
-def extract_audio_from_mp4(file_path: str, temp_dir) -> str:
+def extract_audio_from_mp4(file_path: str, temp_dir) -> np.ndarray:
     """
     Extract audio from mp4 file to wav
     :param file_path: path to the audio file
@@ -239,8 +239,8 @@ def extract_audio_from_mp4(file_path: str, temp_dir) -> str:
     temp_audio_path = os.path.join(temp_dir.name, "temp_audio.wav")
     video.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
     video.close()
-
-    return temp_audio_path
+    (audio, _) = librosa.core.load(temp_audio_path, sr=44100, mono=True)
+    return audio
 
 
 def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
@@ -262,6 +262,10 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
     segment_index = 0
     temp_dir = tempfile.TemporaryDirectory()
     try:
+        video_embeddings_l = np.concatenate((video_embeddings_l,
+                                             extract_frame_embeddings_vit(filename, model_l,
+                                                                          feature_extractor_l)), axis=0)
+        audio = extract_audio_from_mp4(filename, temp_dir)
         while start_time < video_duration:
             end_time = min(start_time + segment_duration, video_duration)
             if end_time - start_time != segment_duration:
@@ -274,10 +278,8 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
             # if len(audio_embeddings_l) == 0:
             #     stack = np.hstack
             audio_embeddings_l = np.concatenate((audio_embeddings_l,
-                                                 get_sound_embedding(extract_audio_from_mp4(filename, temp_dir), start_time, end_time)), axis=0)
-            video_embeddings_l = np.concatenate((video_embeddings_l,
-                                                 extract_frame_embeddings_vit(filename, model_l,
-                                                                              feature_extractor_l)), axis=0)
+                                                 get_sound_embedding(audio, start_time, end_time)), axis=0)
+
             segments.extend([segment_index] * 10)
             filenames.extend([filename] * 10)
             start_time += segment_duration
@@ -285,6 +287,11 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
     finally:
         video.close()
         temp_dir.cleanup()
+    min_length = min(len(video_embeddings_l), len(audio_embeddings_l), len(segments), len(filenames))
+    video_embeddings_l = video_embeddings_l[:min_length]
+    audio_embeddings_l = audio_embeddings_l[:min_length]
+    segments = segments[:min_length]
+    filenames = filenames[:min_length]
     return {"video": np.array(video_embeddings_l), "audio": np.array(audio_embeddings_l),
             "segments": segments, "filenames": filenames}
 
@@ -321,14 +328,23 @@ def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, se
     :param filenames:
     :return:
     """
+    print(f"Start append f{vector.shape}")
+    if not (len(vector) == len(segments) == len(filenames)):
+        raise ValueError(
+            f"Length mismatch: vector ({len(vector)}), segments ({len(segments)}), filenames ({len(filenames)})")
+
     table = db.open_table(table_name)
 
-    for i in range(len(segments)):
-        segment_time_array = pa.array([segments[i]])
-        filename_array = pa.array([filenames[i]])
-        vector_array = pa.array([vector[i]])
-        t = pa.Table.from_arrays([vector_array, segment_time_array, filename_array], schema=table.schema)
-        table.add(t)
+    # Create PyArrow arrays for all data at once
+    vector_array = pa.array(vector.tolist())
+    segment_time_array = pa.array(segments)
+    filename_array = pa.array(filenames)
+
+    # Create a single PyArrow Table from all arrays
+    t = pa.Table.from_arrays([vector_array, segment_time_array, filename_array], schema=table.schema)
+
+    # Add the entire table in one operation
+    table.add(t)
 
 
 def calculate_f1_score(true_positives: int, false_positives: int, false_negatives: int) -> float:
@@ -439,6 +455,7 @@ def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l) -
                                    dict_data["segments"], dict_data["filenames"])
             with open("indexed_files.json", "w", encoding="utf-8") as f:
                 json.dump(indexed_files, f, indent=4)
+                print(f"Indexed {file}")
     return database
 
 
