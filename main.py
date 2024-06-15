@@ -217,15 +217,13 @@ def extract_frame_embeddings_vit(video_path: str, model_l, feature_extractor_l, 
     return outputs.detach().cpu().squeeze().numpy()
 
 
-def get_sound_embedding(audio_path: str, n=10) -> np.ndarray:
-    """
-    Extract sound embedding from audio file
-    :param audio_path: path to the audio file
-    :param n:
-    :return: embedding of audio
-    """
+def get_sound_embedding(audio_path, start_time, end_time, n=10):
     (audio, _) = librosa.core.load(audio_path, sr=44100, mono=True)
-    _, emb = model_audio.inference(audio[None, :])
+    start_sample = int(start_time * 44100)
+    end_sample = int(end_time * 44100)
+
+    audio_segment = audio[start_sample:end_sample]
+    _, emb = model_audio.inference(audio_segment[None, :])
     return np.array([emb[0]] * n)
 
 
@@ -269,16 +267,16 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
             if end_time - start_time != segment_duration:
                 start_time += segment_duration
                 continue
-            segment = video.subclip(start_time, end_time)
-            temp_video_path = os.path.join(temp_dir.name, "temp_segment.mp4")
-            segment.write_videofile(temp_video_path, fps=video.fps)
+            # segment = video.subclip(start_time, end_time)
+            # temp_video_path = os.path.join(temp_dir.name, "temp_segment.mp4")
+            # segment.write_videofile(temp_video_path, fps=video.fps)
             # stack = np.vstack
             # if len(audio_embeddings_l) == 0:
             #     stack = np.hstack
             audio_embeddings_l = np.concatenate((audio_embeddings_l,
-                                                 get_sound_embedding(extract_audio_from_mp4(temp_video_path, temp_dir))), axis=0)
+                                                 get_sound_embedding(extract_audio_from_mp4(filename, temp_dir), start_time, end_time)), axis=0)
             video_embeddings_l = np.concatenate((video_embeddings_l,
-                                                 extract_frame_embeddings_vit(temp_video_path, model_l,
+                                                 extract_frame_embeddings_vit(filename, model_l,
                                                                               feature_extractor_l)), axis=0)
             segments.extend([segment_index] * 10)
             filenames.extend([filename] * 10)
