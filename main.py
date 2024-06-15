@@ -190,7 +190,7 @@ def extract_frame_embeddings_vit(video_path: str, model_l, feature_extractor_l, 
     :param video_path: path to the video
     :param model_l: model like VIT transformer
     :param feature_extractor_l: model like ViTFeatureExtractor
-    :param frame_interval:
+    :param frame_interval: interval between frames to extract frame
     :return: embeddings of frames
     """
     cap = cv2.VideoCapture(video_path)
