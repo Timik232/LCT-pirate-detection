@@ -1,5 +1,8 @@
+import json
 import os
-
+import tempfile
+import pandas as pd
+from numba import njit
 import lancedb
 import librosa
 import numpy as np
@@ -226,14 +229,15 @@ def get_sound_embedding(audio_path: str, n=10) -> np.ndarray:
     return np.array([emb[0]] * n)
 
 
-def extract_audio_from_mp4(file_path: str) -> str:
+def extract_audio_from_mp4(file_path: str, temp_dir) -> str:
     """
     Extract audio from mp4 file to wav
     :param file_path: path to the audio file
+    :param temp_dir: temporary directory
     :return: path to the new file
     """
     video = mp.VideoFileClip(file_path)
-    temp_audio_path = "temp_audio.wav"
+    temp_audio_path = os.path.join(temp_dir.name, "temp_audio.wav")
     video.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
 
     return temp_audio_path
@@ -256,25 +260,28 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l) -> dict:
     segment_duration = 10
     start_time = 0
     segment_index = 0
+    temp_dir = tempfile.TemporaryDirectory()
     while start_time < video_duration:
         end_time = min(start_time + segment_duration, video_duration)
         if end_time - start_time != segment_duration:
             start_time += segment_duration
             continue
         segment = video.subclip(start_time, end_time)
-        segment.write_videofile("temp_segment.mp4", fps=video.fps)
+        temp_video_path = os.path.join(temp_dir.name, "temp_segment.mp4")
+        segment.write_videofile(temp_video_path, fps=video.fps)
         # stack = np.vstack
         # if len(audio_embeddings_l) == 0:
         #     stack = np.hstack
         audio_embeddings_l = np.concatenate((audio_embeddings_l,
-                                             get_sound_embedding(extract_audio_from_mp4("temp_segment.mp4"))), axis=0)
+                                             get_sound_embedding(extract_audio_from_mp4(temp_video_path, temp_dir))), axis=0)
         video_embeddings_l = np.concatenate((video_embeddings_l,
-                                             extract_frame_embeddings_vit("temp_segment.mp4", model_l,
+                                             extract_frame_embeddings_vit(temp_video_path, model_l,
                                                                           feature_extractor_l)), axis=0)
         segments.extend([segment_index] * 10)
         filenames.extend([filename] * 10)
         start_time += segment_duration
         segment_index += 1
+    temp_dir.cleanup()
     return {"video": np.array(video_embeddings_l), "audio": np.array(audio_embeddings_l),
             "segments": segments, "filenames": filenames}
 
@@ -301,7 +308,7 @@ def create_lance_table(table_name: str, vector_dim) -> lancedb.DBConnection:
     return db
 
 
-def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, segments, filenames) -> None:
+def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, segments, filenames: list) -> None:
     """
     append vector of embeddings to table
     :param db: lancedb connection
@@ -321,12 +328,124 @@ def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, se
         table.add(t)
 
 
-def check_similarity():
-    model = ViTModel.from_pretrained('google/vit-base-patch16-224')
-    feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-    model.eval()
+def calculate_f1_score(true_positives: int, false_positives: int, false_negatives: int) -> float:
+    """
+    Calculate the F1 score based on true positives, false positives, and false negatives.
+    """
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+    f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    return f1_score
+
+
+def find_license_by_pirate_name(df: pd.DataFrame, file_name: str):
+    """
+    Find the ID of a file with a certain name in a Pandas DataFrame.
+    :param df: Pandas DataFrame
+    :param file_name: name of the file
+    :return: ID of the file
+    """
+    matching_row = df[df['ID_piracy'] == file_name]
+    if matching_row.empty:
+        return None
+    else:
+        return matching_row['ID_license'].values[0]
+
+
+def f1_for_all_search(model, feature_extractor, database, threshold: float) -> float:
+    """
+    calculate f1 for all search video
+    :param model: model like vit transformer
+    :param feature_extractor: model like ViTFeatureExtractor
+    :param database: database connection
+    :param threshold: threshold for confidence of the found video
+    :return:
+    """
+    true_positives = 0
+    false_positives = 0
+    false_negatives = 0
+    table_video = database.open_table("video_embeddings")
+    table_audio = database.open_table("audio_embeddings")
+    threshold_video = 0.6
+    threshold_audio = 0.08
+    csv_path = "piracy_val.csv"
+    ground_truth = pd.DataFrame(pd.read_csv(csv_path))
+    pirate_video = "val/"
+    pirate_files = os.listdir(pirate_video)
+    for file in pirate_files:
+        percent_dict = {}
+        if file.endswith(".mp4"):
+            dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
+            for batch in dict_data["video"]:
+                result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+                if result[0]["_distance"] < threshold_video:
+                    if not percent_dict.get(result[0]["filename"]):
+                        percent_dict[result[0]["filename"]] = 1
+                    else:
+                        percent_dict[result[0]["filename"]] += 1
+            for batch in dict_data["audio"]:
+                result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+                if result[0]["_distance"] < threshold_audio:
+                    if not percent_dict.get(result[0]["filename"]):
+                        percent_dict[result[0]["filename"]] = 1
+                    else:
+                        percent_dict[result[0]["filename"]] += 1
+            for key, _ in percent_dict.items():
+                percent_dict[key] = percent_dict[key] / (len(dict_data["video"] * 2))
+            predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
+            if percent_dict[predicted_license_video] < threshold:
+                predicted_license_video = None
+            if predicted_license_video is None:
+                false_negatives += 1
+            else:
+                true_license_id = find_license_by_pirate_name(ground_truth, file)
+                if predicted_license_video == true_license_id:
+                    true_positives += 1
+                else:
+                    false_positives += 1
+    return calculate_f1_score(true_positives, false_positives, false_negatives)
+
+
+def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l) -> lancedb.DBConnection:
+    """
+    Get embeddings for all files in the directory
+    :param directory: path to the directory
+    :param model_l: model like VIT transformer
+    :param feature_extractor_l: model like ViTFeatureExtractor
+    :return: database connection
+    """
+    if not os.path.exists("indexed_files.json"):
+        indexed_files = {"indexed_files": []}
+    else:
+        indexed_files = json.load(open("indexed_files.json", "r", encoding="utf-8"))
+    database = None
+    files = os.listdir(directory)
+    for file in files:
+        if file.endswith(".mp4"):
+            if file in indexed_files["indexed_files"]:
+                continue
+            else:
+                indexed_files["indexed_files"].append(file)
+            dict_data = get_video_embeddings(os.path.join(directory, file), model_l, feature_extractor_l)
+            _ = create_lance_table("video_embeddings", len(dict_data["video"][0]))
+            database = create_lance_table("audio_embeddings", len(dict_data["audio"][0]))
+
+            append_vector_to_table(database, "video_embeddings", dict_data["video"],
+                                   dict_data["segments"], dict_data["filenames"])
+            append_vector_to_table(database, "audio_embeddings", dict_data["audio"],
+                                   dict_data["segments"], dict_data["filenames"])
+            with open("indexed_files.json", "w", encoding="utf-8") as f:
+                json.dump(indexed_files, f, indent=4)
+    return database
+
+
+def check_similarity(model, feature_extractor):
+    """
+    Check similarity between two videos
+    :param model: model like vit transformer
+    :param feature_extractor: model like ViTFeatureExtractor
+    :return:
+    """
 
     dict_data = get_video_embeddings("ydcrodwtz3mstjq1vhbdflx6kyhj3y0p.mp4",
                                      model, feature_extractor)
@@ -348,7 +467,7 @@ def check_similarity():
     percent_dict = {}
     for batch in dict_data["video"]:
         result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-        if result[0]["_distance"] < threshold_audio:
+        if result[0]["_distance"] < threshold_video:
             if not percent_dict.get(result[0]["filename"]):
                 percent_dict[result[0]["filename"]] = 1
             else:
@@ -368,10 +487,18 @@ def check_similarity():
     matrix = cosine_similarity(dict_data["video"], dict_data_1["video"])
     matrix_audio = cosine_similarity(dict_data["audio"], dict_data_1["audio"])
     martix = matrix + matrix_audio
-    print(max(percent_dict.items(), key=operator.itemgetter(1))[0])
+    print(max(percent_dict.items(), key=operator.itemgetter(1))[0]) # add threshold for final result
     make_plt_rows(matrix)
     make_plt_columns(matrix)
 
 
 if "__main__" == __name__:
-    check_similarity()
+    model = ViTModel.from_pretrained('google/vit-base-patch16-224')
+    feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+    CONFIDENCE_THRESHOLD = 0.05
+    database = get_embeddings_for_directory("index/", model, feature_extractor)
+    # check_similarity(model, feature_extractor)
+    print(f1_for_all_search(model, feature_extractor, database, CONFIDENCE_THRESHOLD))
