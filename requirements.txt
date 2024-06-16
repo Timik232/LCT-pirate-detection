@@ -12,3 +12,8 @@ panns-inference
 scikit-learn
 matplotlib
 scipy
+pandas
+numba
+Flask
+requests
+tqdm
