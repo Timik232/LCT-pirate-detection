@@ -17,7 +17,7 @@ POST
 #### Примеры запроса
 
 {\
-    "download_url": "http://example.com/video.mp4",\
+    "download_url": "http://example.com/video.mp4", \
     "filename": "video.mp4",\
     "md5": "d41d8cd98f00b204e9800998ecf8427e",\
     "purpose": "index"\
