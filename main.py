@@ -48,7 +48,7 @@ def create_test_csv(model, feature_extractor, database):
     """
     csv_path = "piracy_val.csv"
 
-    pirate_video = "val/"
+    pirate_video = "test_test/"
     pirate_files = os.listdir(pirate_video)
     test_csv = pd.DataFrame(columns=["ID_piracy", "segment", "ID_license", "segment.1"])
     def process_file(file):
@@ -214,4 +214,5 @@ if "__main__" == __name__:
     CONFIDENCE_THRESHOLD = 0.05
     database = get_embeddings_for_directory("index/", model, feature_extractor, model_audio)
     # check_similarity(model, feature_extractor)
-    print(f1_for_all_search(model, feature_extractor, database, CONFIDENCE_THRESHOLD))
+    # print(f1_for_all_search(model, feature_extractor, database, CONFIDENCE_THRESHOLD))
+    create_test_csv(model, feature_extractor, database)
