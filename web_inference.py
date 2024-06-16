@@ -56,8 +56,7 @@ class MainApplication:
         self.vit = ViTModel.from_pretrained('google/vit-base-patch16-224')
         self.feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
         self.model_audio = AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
-        self.db = create_lance_table(VIDEO_EMBEDDINGS_TABLE, VIDEO_EMBEDDINGS_DIM)
-        self.db = create_lance_table(AUDIO_EMBEDDINGS_TABLE, AUDIO_EMBEDDINGS_DIM)
+        self.db = create_lance_db()
         self.queue = Queue()
         self.cache = {}
 
@@ -81,8 +80,9 @@ class MainApplication:
     def search_in_db(self, filename):
         percent_dict = {}
         dict_data = get_video_embeddings(filename, self.vit, self.feature_extractor, self.model_audio)
-        for table in self.db.table_names():
-            table_filename = table.split("$")[1]
+        for table_name in self.db.table_names():
+            table = self.db.open_table(table_name)
+            table_filename = table_name.split("$")[1]
             full_embedding_video = table.search().where(f"filename = {table_filename}").to_list()
             full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
             full_embedding_audio = table.search().where(f"filename = {table_filename}").to_list()
@@ -99,11 +99,13 @@ class MainApplication:
                 interval2 = result_peaks_rows["interval"]
                 intervals = f"{interval1} {interval2}"
                 percent_dict[table_filename] = {"score": result_peaks_columns["width"] + result_peaks_columns["height"],
-                                                "intervals": f"{intervals}"}
+                                                "intervals": f"{intervals}",}
 
         predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
 
-        return percent_dict[predicted_license_video]["intervals"]
+        if not predicted_license_video:
+            return None
+        return percent_dict[predicted_license_video]["intervals"], predicted_license_video
 
 
 application = MainApplication()

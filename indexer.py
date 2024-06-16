@@ -31,7 +31,7 @@ def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l, m
                 indexed_files["indexed_files"].append(file)
             dict_data = get_video_embeddings(os.path.join(directory, file), model_l, feature_extractor_l, model_audio)
             append_vectors_to_table(database, f"video_embeddings${file}", dict_data["video"], dict_data["audio"],
-                                    dict_data["segments"], dict_data["filenames"], VIDEO_EMBEDDINGS_DIM,
+                                    dict_data["filenames"], VIDEO_EMBEDDINGS_DIM,
                                     AUDIO_EMBEDDINGS_DIM)
             with open("indexed_files.json", "w", encoding="utf-8") as f:
                 json.dump(indexed_files, f, indent=4)

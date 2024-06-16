@@ -59,8 +59,9 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
         percent_dict = {}
         if file.endswith(".mp4"):
             dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
-            for table in database.table_names():
-                table_filename = table.split("$")[1]
+            for table_name in database.table_names():
+                table = database.open_table(table_name)
+                table_filename = table_name.split("$")[1]
                 full_embedding_video = table.search().where(f"filename = {table_filename}").to_list()
                 full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
                 full_embedding_audio = table.search().where(f"filename = {table_filename}").to_list()
@@ -72,19 +73,25 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
                 if result_peaks_columns["interval"] == "":
                     continue
                 else:
-                    percent_dict = result_peaks_columns["width"] + result_peaks_columns["height"]
+                    result_peaks_rows = make_plt_rows(matrix)
+                    interval1 = result_peaks_columns["interval"]
+                    interval2 = result_peaks_rows["interval"]
+                    intervals = f"{interval1} {interval2}"
+                    percent_dict[table_filename] = {
+                        "score": result_peaks_columns["width"] + result_peaks_columns["height"],
+                        "intervals": f"{intervals}"}
 
-        predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
-        if percent_dict[predicted_license_video] < threshold:
-            predicted_license_video = None
-        if predicted_license_video is None:
-            false_negatives += 1
-        else:
-            true_license_id = find_license_by_pirate_name(ground_truth, file)
-            if predicted_license_video == true_license_id:
-                true_positives += 1
+            predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
+            if percent_dict[predicted_license_video]["score"] < threshold:
+                predicted_license_video = None
+            if predicted_license_video is None:
+                false_negatives += 1
             else:
-                false_positives += 1
+                true_license_id = find_license_by_pirate_name(ground_truth, file)
+                if predicted_license_video == true_license_id:
+                    true_positives += 1
+                else:
+                    false_positives += 1
     return calculate_f1_score(true_positives, false_positives, false_negatives)
 
 
