@@ -66,6 +66,8 @@ class MainApplication:
                 continue
             task = self.queue.get_nowait()
             print(f"task: {task.data}" )
+            if not task.data.get("status") == "process":
+                continue
             content, status_code = task.func(task.kwargs)
             task.set_result(content, status_code)
             self.cache[task.data["id"]] = task
