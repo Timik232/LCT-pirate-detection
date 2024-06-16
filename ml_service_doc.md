@@ -16,19 +16,20 @@ POST
 - purpose (string): Цель операции, может быть либо "index", либо "val". **Обязательный параметр**.
 #### Примеры запроса
 
-{
-    "download_url": "http://example.com/video.mp4",
-    "filename": "video.mp4",
-    "md5": "d41d8cd98f00b204e9800998ecf8427e",
-    "purpose": "index"
+{\
+    "download_url": "http://example.com/video.mp4",\
+    "filename": "video.mp4",\
+    "md5": "d41d8cd98f00b204e9800998ecf8427e",\
+    "purpose": "index"\
 }
 #### Ответы
 
-- **200 OK**
+  
   - Для purpose = "index":
   {
         "indexed": true
     }
+    - **200 OK**
   - Для purpose = "val": {
         "intervals": [ /* массив интервалов */ ],
         "filename": "video.mp4"
