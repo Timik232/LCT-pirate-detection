@@ -3,6 +3,7 @@ from scipy.signal import find_peaks, peak_widths
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def make_plt_rows(matrix_l, plt_verbose=False):
     """
     Make plot of rows
@@ -40,7 +41,7 @@ def make_plt_rows(matrix_l, plt_verbose=False):
 
     peaks, _ = find_peaks(y_smooth)
     if len(peaks) == 0:
-        return {"interval" : ""}
+        return {"interval": ""}
     widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
 
     max_peak_idx = np.argmax(y_smooth[peaks])
@@ -57,18 +58,16 @@ def make_plt_rows(matrix_l, plt_verbose=False):
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
     else:
-        left_ips_x = 0
-        right_ips_x = 0
-        return {"interval" : ""}
+        return {"interval": ""}
     if plt_verbose:
         plt.plot(x_smooth, y_smooth)
         plt.xlabel('Index of Minimum Cosine Distance')
         plt.ylabel('Sum of Max Value - Min Value')
         plt.title('Graph of Minimum Cosine Distances with Peaks')
         plt.grid(True)
-        plt.show()
-    if right_ips_x - left_ips_x < 10 :
-        return {"interval" : ""}
+        plt.show(block=True)
+    if right_ips_x - left_ips_x < 10:
+        return {"interval": ""}
     return {"interval": f"{left_ips_x}-{right_ips_x}", "width": widths_half_max[0][max_width_idx],
             "height": y_smooth[peaks][max_width_idx]}
 
@@ -108,7 +107,7 @@ def make_plt_columns(matrix_l, plt_verbose=False):
 
     peaks, _ = find_peaks(y_smooth)
     if len(peaks) == 0:
-        return {"interval" : ""}
+        return {"interval": ""}
     widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
 
     max_peak_idx = np.argmax(y_smooth[peaks])
@@ -125,17 +124,15 @@ def make_plt_columns(matrix_l, plt_verbose=False):
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
     else:
-        left_ips_x = 0
-        right_ips_x = 0
-        return {"interval" : ""}
+        return {"interval": ""}
     if plt_verbose:
         plt.plot(x_smooth, y_smooth)
         plt.xlabel('Index of Minimum Cosine Distance')
         plt.ylabel('Sum of Max Value - Min Value')
         plt.title('Graph of Minimum Cosine Distances with Peaks')
         plt.grid(True)
-        plt.show()
-    if right_ips_x - left_ips_x < 10 :
-        return {"interval" : ""}
+        plt.show(block=True)
+    if right_ips_x - left_ips_x < 10:
+        return {"interval": ""}
     return {"interval": f"{left_ips_x}-{right_ips_x}", "width": widths_half_max[0][max_width_idx],
             "height": y_smooth[peaks][max_width_idx]}
