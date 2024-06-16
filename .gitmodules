@@ -1,0 +1,3 @@
+[submodule "rutube"]
+	path = rutube
+	url = https://github.com/Midnight-Knight/rutube.git
