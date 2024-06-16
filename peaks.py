@@ -53,7 +53,7 @@ def make_plt_rows(matrix_l, plt_verbose=False):
     if peaks[max_peak_idx] == peaks[max_width_idx]:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
-    elif peaks[max_width_idx] and widths_half_max[0][max_width_idx] > 10 and y_smooth[peaks][max_width_idx] > 0.3:
+    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.25:
         left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
     else:
@@ -67,6 +67,8 @@ def make_plt_rows(matrix_l, plt_verbose=False):
         plt.title('Graph of Minimum Cosine Distances with Peaks')
         plt.grid(True)
         plt.show()
+    if right_ips_x - left_ips_x < 10 :
+        return {"interval" : ""}
     return {"interval": f"{left_ips_x}-{right_ips_x}", "width": widths_half_max[0][max_width_idx],
             "height": y_smooth[peaks][max_width_idx]}
 
@@ -119,7 +121,7 @@ def make_plt_columns(matrix_l, plt_verbose=False):
     if peaks[max_peak_idx] == peaks[max_width_idx]:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
-    elif peaks[max_width_idx] and widths_half_max[0][max_width_idx] > 10 and y_smooth[peaks][max_width_idx] > 0.3:
+    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.25:
         left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
     else:
@@ -133,5 +135,7 @@ def make_plt_columns(matrix_l, plt_verbose=False):
         plt.title('Graph of Minimum Cosine Distances with Peaks')
         plt.grid(True)
         plt.show()
+    if right_ips_x - left_ips_x < 10 :
+        return {"interval" : ""}
     return {"interval": f"{left_ips_x}-{right_ips_x}", "width": widths_half_max[0][max_width_idx],
             "height": y_smooth[peaks][max_width_idx]}
