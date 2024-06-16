@@ -1,6 +1,8 @@
 import operator
 import tempfile
 import threading
+import time
+from queue import Queue
 
 import requests
 from flask import request
@@ -35,6 +37,25 @@ def run_application():
         threading.Thread(target=lambda: app.run(debug=False)).start()
 
 
+class Task:
+    def __init__(self, task_type, func, kwargs: dict[str, any]):
+        task_id = hashlib.md5(str(time.time()).encode('utf-8')).hexdigest()
+        self.data = {"id": task_id, "type": task_type, "status": "process", "content": {}}
+        self.func = func
+        self.kwargs = kwargs
+        self.status_code = 200
+
+    def set_result(self, content, status_code):
+        if content is None:
+            self.data["content"] = {}
+            self.data["status"] = "abort"
+            self.status_code = status_code
+        else:
+            self.data["status"] = "ready"
+            self.data["content"] = content
+            self.status_code = status_code
+
+
 class MainApplication:
     def __init__(self):
         self.vit = ViTModel.from_pretrained('google/vit-base-patch16-224')
@@ -42,6 +63,21 @@ class MainApplication:
         self.model_audio = AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
         self.db = create_lance_table(VIDEO_EMBEDDINGS_TABLE, VIDEO_EMBEDDINGS_DIM)
         self.db = create_lance_table(AUDIO_EMBEDDINGS_TABLE, AUDIO_EMBEDDINGS_DIM)
+        self.queue = Queue()
+        self.cache = {}
+
+    def start(self):
+        while True:
+            if self.queue.empty():
+                continue
+            task = self.queue.get_nowait()
+            content, status_code = task.func(task.kwargs)
+            task.set_result(content, status_code)
+            self.cache[task.data["id"]] = task
+
+    def add_task(self, task: Task):
+        self.queue.put(task)
+        self.cache[task.data["id"]] = task
 
     def index_in_db(self, temp_dir):
         db = get_embeddings_for_directory(temp_dir, self.vit, self.feature_extractor, self.model_audio)
@@ -89,6 +125,22 @@ class MainApplication:
 application = MainApplication()
 
 
+def index_in_db_wrapper(kwargs):
+    result = application.index_in_db(kwargs.get("temp_dir").name)
+    kwargs.get("temp_dir").cleanup()
+    if not result:
+        return {"error": "error while indexing video"}, 500
+    return {"indexed": True}, 200
+
+
+def search_in_db_wrapper(kwargs):
+    result = application.index_in_db(kwargs.get("filename"))
+    kwargs.get("temp_dir").cleanup()
+    if not result:
+        return {"error": "error while searching video"}, 500
+    return {"intervals": result[0], "filename": result[1]}, 200
+
+
 @app.route('/set_video_download', methods=['POST'])
 def set_video_download():
     temp_dir = tempfile.TemporaryDirectory()
@@ -112,17 +164,21 @@ def set_video_download():
         return jsonify({"error": "purpose can be either index or val"}), 422
 
     if purpose == "index":
-        result = application.index_in_db(temp_dir)
-        if not result:
-            return jsonify({"error": "error while indexing video"}), 500
-        return jsonify({"indexed": True}), 200
+        task = Task("index_in_db", index_in_db_wrapper, {"temp_dir": temp_dir})
+        application.add_task(task)
     if purpose == "val":
-        result = application.search_in_db(os.path.join(temp_dir.name, filename))
-        if not result:
-            return jsonify({"error": "error while searching video"}), 500
-        return jsonify({"intervals": result[0], "filename": result[1]}), 200
+        task = Task("search_in_db", index_in_db_wrapper, {"temp_dir": temp_dir,
+                                                          "filename": os.path.join(temp_dir.name, filename)})
+        application.add_task(task)
 
-    temp_dir.cleanup()
+
+@app.route('/task_status', methods=['POST'])
+def task_status():
+    task_id = request.json.get('task_id')
+    if task_id is None or task_id == "" or task_id not in application.cache.keys():
+        return jsonify({"result": "error", "error_str": "task_id cant be empty"}), 422
+    return jsonify(application.cache[task_id].data), application.cache[task_id].status_code
 
 
 run_application()
+application.start()
