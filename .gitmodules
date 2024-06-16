@@ -1,3 +1,6 @@
 [submodule "rutube"]
 	path = rutube
 	url = https://github.com/Midnight-Knight/rutube.git
+[submodule "lct-backend"]
+	path = lct-backend
+	url = https://github.com/eiparfenov/lct-backend.git
