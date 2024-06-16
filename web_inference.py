@@ -55,6 +55,9 @@ class MainApplication:
     def __init__(self):
         self.vit = ViTModel.from_pretrained('google/vit-base-patch16-224')
         self.feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.vit.to(device)
+        self.vit.eval()
         self.model_audio = AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_available() else 'cpu')
         self.db = create_lance_db()
         self.queue = Queue()
