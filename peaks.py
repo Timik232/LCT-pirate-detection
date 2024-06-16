@@ -39,6 +39,8 @@ def make_plt_rows(matrix_l, plt_verbose=False):
     y_smooth = f_interp(x_smooth)
 
     peaks, _ = find_peaks(y_smooth)
+    if len(peaks) == 0:
+        return {"interval" : ""}
     widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
 
     max_peak_idx = np.argmax(y_smooth[peaks])
@@ -103,6 +105,8 @@ def make_plt_columns(matrix_l, plt_verbose=False):
     y_smooth = f_interp(x_smooth)
 
     peaks, _ = find_peaks(y_smooth)
+    if len(peaks) == 0:
+        return {"interval" : ""}
     widths_half_max = peak_widths(y_smooth, peaks, rel_height=0.50)
 
     max_peak_idx = np.argmax(y_smooth[peaks])
