@@ -372,6 +372,57 @@ def find_license_by_pirate_name(df: pd.DataFrame, file_name: str):
     else:
         return matching_row['ID_license'].values[0]
 
+def test_file(model, feature_extractor, database,):
+    table_video = database.open_table("video_embeddings")
+    table_audio = database.open_table("audio_embeddings")
+    threshold_video = 0.6
+    threshold_audio = 0.08
+    csv_path = "piracy_val.csv"
+    ground_truth = pd.read_csv(csv_path)
+    pirate_video = "test/"
+    pirate_files = [f for f in os.listdir(pirate_video) if f.endswith(".mp4")]
+
+    true_positives = 0
+    false_positives = 0
+    false_negatives = 0
+    test_csv = pd.DataFrame(columns=["ID_piracy", "segment", "ID_license", "segment.1"])
+
+    def process_file(file, test_csv):
+        percent_dict = defaultdict(int)
+        print(f"Processing {file}")
+        dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
+
+        for batch in dict_data["video"]:
+            result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+            if result[0]["_distance"] < threshold_video:
+                percent_dict[result[0]["filename"]] += 1
+
+        for batch in dict_data["audio"]:
+            result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+            if result[0]["_distance"] < threshold_audio:
+                percent_dict[result[0]["filename"]] += 1
+
+        for key in percent_dict:
+            percent_dict[key] = percent_dict[key] / (len(dict_data["video"]) * 2)
+
+        predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
+        matrix = cosine_similarity(dict_data["video"], dict_data_1["video"])
+        matrix_audio = cosine_similarity(dict_data["audio"], dict_data_1["audio"])
+        matrix = matrix + matrix_audio
+        second_video = make_plt_rows(matrix)
+        first_video = make_plt_columns(matrix)
+        new_row = pd.DataFrame({
+            'ID_piracy': [file],
+            'segment': [first_video],
+            'ID_license': [predicted_license_video],
+            'segment.1': [second_video]
+        })
+        test_csv = pd.concat([test_csv, new_row], ignore_index=True)
+        test_csv.to_csv("output.csv", index=True)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(process_file, file, test_csv) for file in pirate_files]
+    test_csv.to_csv("output.csv", index=True)
+
 
 def f1_for_all_search(model, feature_extractor, database, threshold: float) -> float:
     """
@@ -388,12 +439,14 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
     threshold_audio = 0.08
     csv_path = "piracy_val.csv"
     ground_truth = pd.read_csv(csv_path)
-    pirate_video = "val/"
+    pirate_video = "test/"
     pirate_files = [f for f in os.listdir(pirate_video) if f.endswith(".mp4")]
 
     true_positives = 0
     false_positives = 0
     false_negatives = 0
+
+    test_csv = pd.DataFrame(columns=["ID_piracy", "segment1", "ID_license", "segment2"])
 
     def process_file(file):
         percent_dict = defaultdict(int)
@@ -414,6 +467,7 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
             percent_dict[key] = percent_dict[key] / (len(dict_data["video"]) * 2)
 
         predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
+
         if percent_dict[predicted_license_video] < threshold:
             predicted_license_video = None
 
@@ -434,57 +488,6 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
             false_negatives += fn
 
     return calculate_f1_score(true_positives, false_positives, false_negatives)
-    # true_positives = 0
-    # false_positives = 0
-    # false_negatives = 0
-    # table_video = database.open_table("video_embeddings")
-    # table_audio = database.open_table("audio_embeddings")
-    # threshold_video = 0.6
-    # threshold_audio = 0.08
-    # csv_path = "piracy_val.csv"
-    # ground_truth = pd.DataFrame(pd.read_csv(csv_path))
-    # pirate_video = "val/"
-    # pirate_files = [file for file in os.listdir(pirate_video) if file.endswith(".mp4")]
-    #
-    # def process_file(file):
-    #     percent_dict = {}
-    #     dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
-    #
-    #     for batch in dict_data["video"]:
-    #         result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    #         if result[0]["_distance"] < threshold_video:
-    #             percent_dict[result[0]["filename"]] = percent_dict.get(result[0]["filename"], 0) + 1
-    #
-    #     for batch in dict_data["audio"]:
-    #         result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-    #         if result[0]["_distance"] < threshold_audio:
-    #             percent_dict[result[0]["filename"]] = percent_dict.get(result[0]["filename"], 0) + 1
-    #
-    #     for key in percent_dict.keys():
-    #         percent_dict[key] = percent_dict[key] / (len(dict_data["video"]) * 2)
-    #
-    #     predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1), default=(None, 0))[0]
-    #     if percent_dict.get(predicted_license_video, 0) < threshold:
-    #         predicted_license_video = None
-    #
-    #     true_license_id = find_license_by_pirate_name(ground_truth, file)
-    #
-    #     if predicted_license_video is None:
-    #         return (0, 0, 1)  # false_negative
-    #     elif predicted_license_video == true_license_id:
-    #         return (1, 0, 0)  # true_positive
-    #     else:
-    #         return (0, 1, 0)  # false_positive
-    #
-    # with ProcessPoolExecutor() as executor:
-    #     results = list(executor.map(process_file, pirate_files))
-    #
-    # for tp, fp, fn in results:
-    #     true_positives += tp
-    #     false_positives += fp
-    #     false_negatives += fn
-    #
-    # return calculate_f1_score(true_positives, false_positives, false_negatives)
 
 
 def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l) -> lancedb.DBConnection:
@@ -585,4 +588,5 @@ if "__main__" == __name__:
     CONFIDENCE_THRESHOLD = 0.05
     database = get_embeddings_for_directory("index/", model, feature_extractor)
     # check_similarity(model, feature_extractor)
-    print(f1_for_all_search(model, feature_extractor, database, CONFIDENCE_THRESHOLD))
+    # print(f1_for_all_search(model, feature_extractor, database, CONFIDENCE_THRESHOLD))
+    test_file(model, feature_extractor, database)
