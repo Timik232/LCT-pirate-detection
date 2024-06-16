@@ -18,11 +18,6 @@ from indexer import *
 from sklearn.metrics.pairwise import cosine_similarity
 from peaks import *
 
-AUDIO_EMBEDDINGS_TABLE = "audio_embeddings"
-AUDIO_EMBEDDINGS_DIM = 2048
-VIDEO_EMBEDDINGS_TABLE = "video_embeddings"
-VIDEO_EMBEDDINGS_DIM = 768
-
 
 def md5_checksum(filepath):
     hash_md5 = hashlib.md5()
@@ -84,42 +79,31 @@ class MainApplication:
         return db is not None
 
     def search_in_db(self, filename):
-        dict_data = get_video_embeddings(filename,
-                                         self.vit, self.feature_extractor, self.model_audio)
-        table_video = self.db.open_table(VIDEO_EMBEDDINGS_TABLE)
-        table_audio = self.db.open_table(AUDIO_EMBEDDINGS_TABLE)
-        threshold_video = 0.6
-        threshold_audio = 0.08
         percent_dict = {}
-        for batch in dict_data["video"]:
-            result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-            if result[0]["_distance"] < threshold_video:
-                if not percent_dict.get(result[0]["filename"]):
-                    percent_dict[result[0]["filename"]] = 1
-                else:
-                    percent_dict[result[0]["filename"]] += 1
+        dict_data = get_video_embeddings(filename, self.vit, self.feature_extractor, self.model_audio)
+        for table in self.db.table_names():
+            table_filename = table.split("$")[1]
+            full_embedding_video = table.search().where(f"filename = {table_filename}").to_list()
+            full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
+            full_embedding_audio = table.search().where(f"filename = {table_filename}").to_list()
+            full_embedding_audio_vec = [x["vector_audio"] for x in full_embedding_audio]
+            matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
+            matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
+            matrix = matrix + matrix_audio
+            result_peaks_columns = make_plt_columns(matrix)
+            if result_peaks_columns["interval"] == "":
+                continue
+            else:
+                result_peaks_rows = make_plt_rows(matrix)
+                interval1 = result_peaks_columns["interval"]
+                interval2 = result_peaks_rows["interval"]
+                intervals = f"{interval1} {interval2}"
+                percent_dict[table_filename] = {"score": result_peaks_columns["width"] + result_peaks_columns["height"],
+                                                "intervals": f"{intervals}"}
 
-        for batch in dict_data["audio"]:
-            result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-            if result[0]["_distance"] < threshold_audio:
-                if not percent_dict.get(result[0]["filename"]):
-                    percent_dict[result[0]["filename"]] = 1
-                else:
-                    percent_dict[result[0]["filename"]] += 1
-        for key, _ in percent_dict.items():
-            percent_dict[key] = percent_dict[key] / (len(dict_data["video"] * 2))
+        predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
 
-        file_piracy = max(percent_dict.items(), key=operator.itemgetter(1))[0]  # add threshold for final result
-        full_embedding_video = table_video.search().where(f"filename = {file_piracy}").to_list()
-        full_embedding_video_vec = [x["vector"] for x in full_embedding_video]
-        full_embedding_audio = table_audio.search().where(f"filename = {file_piracy}").to_list()
-        full_embedding_audio_vec = [x["vector"] for x in full_embedding_audio]
-
-        matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
-        matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
-        matrix = matrix + matrix_audio
-
-        return f"{make_plt_rows(matrix)} {make_plt_columns(matrix)}", file_piracy
+        return percent_dict[predicted_license_video]["intervals"]
 
 
 application = MainApplication()
