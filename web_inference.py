@@ -83,9 +83,9 @@ class MainApplication:
         for table_name in self.db.table_names():
             table = self.db.open_table(table_name)
             table_filename = table_name.split("_")[1]
-            full_embedding_video = table.search().where(f"filename = '{table_filename}'").to_list()
+            full_embedding_video = table.search().where(f"filename = '{table_filename}'").limit(100000).to_list()
             full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
-            full_embedding_audio = table.search().where(f"filename = '{table_filename}'").to_list()
+            full_embedding_audio = table.search().where(f"filename = '{table_filename}'").limit(100000).to_list()
             full_embedding_audio_vec = [x["vector_audio"] for x in full_embedding_audio]
             matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
             matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
