@@ -78,9 +78,10 @@ def create_test_csv(model, feature_extractor, database):
                         "score": result_peaks_columns["width"] + result_peaks_columns["height"],
                         "intervals": f"{intervals}"}
 
-                predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
-                if not predicted_license_video or predicted_license_video == "":
+                if len(percent_dict.items()) == 0:
                     continue
+                predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
+
                 new_row = pd.DataFrame({
                     'ID_piracy': [file],
                     'segment': [interval1],
