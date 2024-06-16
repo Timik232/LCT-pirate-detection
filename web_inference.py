@@ -65,6 +65,7 @@ class MainApplication:
             if self.queue.empty():
                 continue
             task = self.queue.get_nowait()
+            print(f"task: {task.data}" )
             content, status_code = task.func(task.kwargs)
             task.set_result(content, status_code)
             self.cache[task.data["id"]] = task
@@ -101,12 +102,11 @@ class MainApplication:
                 interval2 = result_peaks_rows["interval"]
                 intervals = f"{interval1} {interval2}"
                 percent_dict[table_filename] = {"score": result_peaks_columns["width"] + result_peaks_columns["height"],
-                                                "intervals": f"{intervals}",}
+                                                "intervals": f"{intervals}", }
 
         if len(percent_dict.items()) == 0:
             return None
         predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
-
 
         return percent_dict[predicted_license_video]["intervals"], predicted_license_video
 
@@ -123,7 +123,7 @@ def index_in_db_wrapper(kwargs):
 
 
 def search_in_db_wrapper(kwargs):
-    result = application.index_in_db(kwargs.get("filename"))
+    result = application.search_in_db(kwargs.get("filename"))
     kwargs.get("temp_dir").cleanup()
     if not result:
         return {"error": "error while searching video"}, 500
@@ -139,8 +139,10 @@ def set_video_download():
     purpose = request.json.get("purpose")
     if download_url == "":
         return jsonify({"error": "download url cant be empty"}), 422
-    response = requests.get(download_url, stream=True)
 
+    if filename == "":
+        return jsonify({"error": "filename cant be empty"}), 422
+    response = requests.get(download_url, stream=True)
 
     with open(os.path.join(temp_dir.name, filename), "wb") as handle:
         for data in tqdm(response.iter_content()):
@@ -158,8 +160,8 @@ def set_video_download():
         task = Task("index_in_db", index_in_db_wrapper, {"temp_dir": temp_dir})
         application.add_task(task)
     if purpose == "val":
-        task = Task("search_in_db", index_in_db_wrapper, {"temp_dir": temp_dir,
-                                                          "filename": os.path.join(temp_dir.name, filename)})
+        task = Task("search_in_db", search_in_db_wrapper, {"temp_dir": temp_dir,
+                                                           "filename": os.path.join(temp_dir.name, filename)})
         application.add_task(task)
     return jsonify({"task_id": task.task_id})
 
