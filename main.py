@@ -51,8 +51,7 @@ def create_test_csv(model, feature_extractor, database):
     pirate_video = "test_test/"
     pirate_files = os.listdir(pirate_video)
     test_csv = pd.DataFrame(columns=["ID_piracy", "segment", "ID_license", "segment.1"])
-    def process_file(file):
-        global test_csv
+    def process_file(file, test_csv):
         percent_dict = {}
         if file.endswith(".mp4"):
             dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
@@ -80,19 +79,25 @@ def create_test_csv(model, feature_extractor, database):
                         "score": result_peaks_columns["width"] + result_peaks_columns["height"],
                         "intervals": f"{intervals}"}
 
-                if len(percent_dict.items()) == 0:
-                    continue
-                predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
+            if len(percent_dict.items()) == 0:
+                return
+            predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
+            interval1 = percent_dict[predicted_license_video]["intervals"].split(" ")[0]
+            interval2 = percent_dict[predicted_license_video]["intervals"].split(" ")[1]
+            new_row = pd.DataFrame({
+                'ID_piracy': [file],
+                'segment': [interval1],
+                'ID_license': [predicted_license_video],
+                'segment.1': [interval2]
+            })
+            return new_row
 
-                new_row = pd.DataFrame({
-                    'ID_piracy': [file],
-                    'segment': [interval1],
-                    'ID_license': [predicted_license_video],
-                    'segment.1': [interval2]
-                })
-                test_csv = pd.concat([test_csv, new_row], ignore_index=True)
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(process_file, file) for file in pirate_files]
+    # with ThreadPoolExecutor(max_workers=8) as executor:
+    #     futures = [executor.submit(process_file, file, test_csv) for file in pirate_files]
+    #     print(futures)
+    rows = []
+    for file in pirate_files:
+        test_csv = pd.concat([test_csv, process_file(file, test_csv)], ignore_index=True)
     test_csv.to_csv("output.csv", index=True)
 
 def f1_for_all_search(model, feature_extractor, database, threshold: float) -> float:
