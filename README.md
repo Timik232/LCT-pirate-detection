@@ -10,7 +10,7 @@
 ## Запуск приложения
 ### Запуск ML сервиса
 ```
-docker build -t with_ignore -f Dockerfile
+docker build -t with_ignore -f Dockerfile .
 ```
 ### Запуск клиентского приложения
 [Клиентское приложение](rutube/README.md)

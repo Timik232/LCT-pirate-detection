@@ -1,3 +1,4 @@
+import ntpath
 import os
 import tempfile
 
@@ -126,7 +127,8 @@ def get_video_embeddings(filename: str, model_l, feature_extractor_l, model_audi
                                                  get_sound_embedding(audio, start_time, end_time, model_audio)), axis=0)
 
             segments.extend([segment_index] * 10)
-            filenames.extend([filename] * 10)
+            filename_base = ntpath.basename(filename)
+            filenames.extend([filename_base] * 10)
             start_time += segment_duration
             segment_index += 1
     finally:
