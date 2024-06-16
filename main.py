@@ -48,12 +48,13 @@ def create_test_csv(model, feature_extractor, database):
     """
     csv_path = "piracy_val.csv"
 
-    pirate_video = "test_test/"
+    pirate_video = "test/"
     pirate_files = os.listdir(pirate_video)
     test_csv = pd.DataFrame(columns=["ID_piracy", "segment", "ID_license", "segment.1"])
     def process_file(file, test_csv):
         percent_dict = {}
         if file.endswith(".mp4"):
+            print(file)
             dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
             for table_name in database.table_names():
                 table = database.open_table(table_name)
@@ -65,11 +66,11 @@ def create_test_csv(model, feature_extractor, database):
                 matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
                 matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
                 matrix = matrix + matrix_audio
-                result_peaks_columns = make_plt_columns(matrix)
+                result_peaks_columns = make_plt_columns(matrix, True)
                 if result_peaks_columns["interval"] == "":
                     continue
                 else:
-                    result_peaks_rows = make_plt_rows(matrix)
+                    result_peaks_rows = make_plt_rows(matrix, True)
                     if result_peaks_rows["interval"] == "":
                         continue
                     interval1 = result_peaks_columns["interval"]
@@ -90,6 +91,8 @@ def create_test_csv(model, feature_extractor, database):
                 'ID_license': [predicted_license_video],
                 'segment.1': [interval2]
             })
+            print(new_row)
+            torch.cuda.empty_cache()
             return new_row
 
     # with ThreadPoolExecutor(max_workers=8) as executor:
@@ -131,11 +134,11 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
                 matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
                 matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
                 matrix = matrix + matrix_audio
-                result_peaks_columns = make_plt_columns(matrix)
+                result_peaks_columns = make_plt_columns(matrix, True)
                 if result_peaks_columns["interval"] == "":
                     continue
                 else:
-                    result_peaks_rows = make_plt_rows(matrix)
+                    result_peaks_rows = make_plt_rows(matrix, True)
                     interval1 = result_peaks_columns["interval"]
                     interval2 = result_peaks_rows["interval"]
                     intervals = f"{interval1} {interval2}"
