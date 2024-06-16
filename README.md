@@ -40,3 +40,6 @@ docker build -t with_ignore -f Dockerfile .
 - [main.py](main_doc.md)
 - [ml_service](ml_service_doc.md)
 
+
+### P.S.
+Если вдруг сервис не работает, то пишите t.me/ser13volk.
