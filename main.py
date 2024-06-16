@@ -114,6 +114,7 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
             dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
             for table_name in database.table_names():
                 table = database.open_table(table_name)
+
                 table_filename = table_name.split("_")[1]
                 full_embedding_video = table.search().where(f"filename = '{table_filename}'").to_list()
                 full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
