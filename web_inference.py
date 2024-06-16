@@ -137,10 +137,11 @@ def set_video_download():
     filename = request.json.get("filename")
     hashsum_md5 = request.json.get("md5")
     purpose = request.json.get("purpose")
-    response = requests.get(download_url, stream=True)
-
     if download_url == "":
         return jsonify({"error": "download url cant be empty"}), 422
+    response = requests.get(download_url, stream=True)
+
+
     with open(os.path.join(temp_dir.name, filename), "wb") as handle:
         for data in tqdm(response.iter_content()):
             handle.write(data)
