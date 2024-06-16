@@ -3,7 +3,7 @@ import pandas as pd
 from indexer import *
 from embeddings import *
 import operator
-
+from concurrent.futures import ThreadPoolExecutor
 import torch
 from transformers import ViTModel, ViTFeatureExtractor
 from panns_inference import AudioTagging
@@ -39,6 +39,59 @@ def find_license_by_pirate_name(df: pd.DataFrame, file_name: str):
         return matching_row['ID_license'].values[0]
 
 
+def create_test_csv(model, feature_extractor, database):
+    """
+    Create a CSV file with the results of the test.
+    :param model: model like vit transformer
+    :param feature_extractor: model like ViTFeatureExtractor
+    :param database: database connection
+    """
+    csv_path = "piracy_val.csv"
+
+    pirate_video = "val/"
+    pirate_files = os.listdir(pirate_video)
+    test_csv = pd.DataFrame(columns=["ID_piracy", "segment", "ID_license", "segment.1"])
+    def process_file(file):
+        global test_csv
+        percent_dict = {}
+        if file.endswith(".mp4"):
+            dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
+            for table_name in database.table_names():
+                table = database.open_table(table_name)
+                table_filename = table_name.split("_")[1]
+                full_embedding_video = table.search().where(f"filename = '{table_filename}'").to_list()
+                full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
+                full_embedding_audio = table.search().where(f"filename = '{table_filename}'").to_list()
+                full_embedding_audio_vec = [x["vector_audio"] for x in full_embedding_audio]
+                matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
+                matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)
+                matrix = matrix + matrix_audio
+                result_peaks_columns = make_plt_columns(matrix)
+                if result_peaks_columns["interval"] == "":
+                    continue
+                else:
+                    result_peaks_rows = make_plt_rows(matrix)
+                    interval1 = result_peaks_columns["interval"]
+                    interval2 = result_peaks_rows["interval"]
+                    intervals = f"{interval1} {interval2}"
+                    percent_dict[table_filename] = {
+                        "score": result_peaks_columns["width"] + result_peaks_columns["height"],
+                        "intervals": f"{intervals}"}
+
+                predicted_license_video = max(percent_dict.items(), key=lambda item: item[1]["score"])[0]
+                if not predicted_license_video or predicted_license_video == "":
+                    continue
+                new_row = pd.DataFrame({
+                    'ID_piracy': [file],
+                    'segment': [interval1],
+                    'ID_license': [predicted_license_video],
+                    'segment.1': [interval2]
+                })
+                test_csv = pd.concat([test_csv, new_row], ignore_index=True)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(process_file, file) for file in pirate_files]
+    test_csv.to_csv("output.csv", index=True)
+
 def f1_for_all_search(model, feature_extractor, database, threshold: float) -> float:
     """
     calculate f1 for all search video
@@ -61,10 +114,11 @@ def f1_for_all_search(model, feature_extractor, database, threshold: float) -> f
             dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor, model_audio)
             for table_name in database.table_names():
                 table = database.open_table(table_name)
-                table_filename = table_name.split("$")[1]
-                full_embedding_video = table.search().where(f"filename = {table_filename}").to_list()
+
+                table_filename = table_name.split("_")[1]
+                full_embedding_video = table.search().where(f"filename = '{table_filename}'").to_list()
                 full_embedding_video_vec = [x["vector_video"] for x in full_embedding_video]
-                full_embedding_audio = table.search().where(f"filename = {table_filename}").to_list()
+                full_embedding_audio = table.search().where(f"filename = '{table_filename}'").to_list()
                 full_embedding_audio_vec = [x["vector_audio"] for x in full_embedding_audio]
                 matrix = cosine_similarity(dict_data["video"], full_embedding_video_vec)
                 matrix_audio = cosine_similarity(dict_data["audio"], full_embedding_audio_vec)

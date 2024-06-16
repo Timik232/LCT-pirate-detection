@@ -1,10 +1,15 @@
 # Документация по методу REST
 [Назад в README](README.md)
 ## Описание веб-сервиса
-Эндпоинт /set_video_download используется для загрузки видеофайла по указанному URL, проверки его целостности с помощью MD5-хэш суммы, а затем для выполнения одной из двух операций: индексирования видео в базе данных или поиска видео в базе данных.
-
+Эндпоинт **/set_video_download** используется для загрузки видеофайла по указанному URL, проверки его целостности с помощью 
+MD5-хэш суммы, а затем для выполнения одной из двух операций: индексирования видео в базе данных или поиска видео 
+в базе данных. \
+ **/task_status:** Позволяет проверить статус выполнения задачи по её идентификатору.
 ### URL
-/set_video_download
+/set_video_download \
+/task_status
+
+
 
 ### Метод
 POST
@@ -14,7 +19,7 @@ POST
 - filename (string): Имя файла для сохранения загруженного видео. **Обязательный параметр**.
 - md5 (string): MD5-хэш сумма для проверки целостности загруженного файла. **Обязательный параметр**.
 - purpose (string): Цель операции, может быть либо "index", либо "val". **Обязательный параметр**.
-#### Примеры запроса
+#### Примеры запроса  /set_video_download
 
 {\
     "download_url": "http://example.com/video.mp4", \
@@ -22,35 +27,29 @@ POST
     "md5": "d41d8cd98f00b204e9800998ecf8427e",\
     "purpose": "index"\
 }
-#### Ответы
+#### Ответы /set_video_download
 
-  
-  - Для purpose = "index":
-  {
-        "indexed": true
-    }
-    - **200 OK**
-  - Для purpose = "val": {
-        "intervals": [ /* массив интервалов */ ],
-        "filename": "video.mp4"
-    }
-  - Если download_url пуст: {
-        "error": "download url cant be empty"
-    }
-    - **422 Unprocessable Entity**
-  - Если purpose не равен "index" или "val":   {
-        "error": "purpose can be either index or val"
-    }
-    - **500 Internal Server Error**
-  - Если MD5-хэш сумма не совпадает:{
-        "error": "file integrity cant be verified"
-    }
-  - Если произошла ошибка при индексировании видео: {
-        "error": "error while indexing video"
-    }
-  - Если произошла ошибка при поиске видео: {
-        "error": "error while searching video"
-    }
+  - **200 OK**
+    - Для purpose = "index":
+    {
+          "task_id": "generated_task_id"
+      }
+      
+    - Для purpose = "val": {
+          "task_id": "generated_task_id"
+      }
+  - **422 Unprocessable Entity**
+    - Если download_url пуст: {
+          "error": "download url cant be empty"
+      }
+   
+    - Если purpose не равен "index" или "val":   {
+          "error": "purpose can be either index or val"
+      }
+  - **500 Internal Server Error**
+    - Если MD5-хэш сумма не совпадает:{
+          "error": "file integrity cant be verified"
+      }
   #### Пример использования
 ```python
 import requests
@@ -70,6 +69,20 @@ if response.status_code == 200:
 else:
     print("Error:", response.json())
 ```
+#### Ответы /task_status
+- **200 OK**
+  { \
+      "id": "generated_task_id", \
+      "type": "index_in_db", \
+      "status": "ready", \
+      "content": {"indexed": True} \
+  }
+- **422 Unprocessable Entity**
+    { \
+        "result": "error", \
+        "error_str": "task_id cant be empty" \
+    }
+    
 ## Важные моменты
 
 1. **Проверка входных данных**: Эндпоинт проверяет, что download_url не пуст, а purpose имеет допустимое значение.
