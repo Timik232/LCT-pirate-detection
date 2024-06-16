@@ -115,7 +115,7 @@ def set_video_download():
         result = application.index_in_db(temp_dir)
         if not result:
             return jsonify({"error": "error while indexing video"}), 500
-        return jsonify({"indexed": True}) , 200
+        return jsonify({"indexed": True}), 200
     if purpose == "val":
         result = application.search_in_db(os.path.join(temp_dir.name, filename))
         if not result:
@@ -123,3 +123,6 @@ def set_video_download():
         return jsonify({"intervals": result[0], "filename": result[1]}), 200
 
     temp_dir.cleanup()
+
+
+run_application()
