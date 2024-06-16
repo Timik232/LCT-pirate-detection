@@ -55,7 +55,7 @@ def append_vectors_to_table(db: lancedb.DBConnection, table_name: str, vector_vi
     filename_array = pa.array(filenames)
 
     # Create a single PyArrow Table from all arrays
-    t = pa.Table.from_arrays([vector_array, vector_audio_array, filenames], schema=table.schema)
+    t = pa.Table.from_arrays([vector_array, vector_audio_array, filename_array], schema=table.schema)
 
     # Add the entire table in one operation
     table.add(t)
