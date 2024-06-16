@@ -16,7 +16,9 @@ from transformers import ViTModel, ViTFeatureExtractor
 from panns_inference import AudioTagging
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
-
+import concurrent.futures
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from scipy.interpolate import PchipInterpolator
 from scipy.signal import find_peaks, peak_widths
 
@@ -26,8 +28,8 @@ model_audio = AudioTagging(checkpoint_path=None, device='cuda' if torch.cuda.is_
 def make_plt_rows(matrix_l):
     """
     Make plot of rows
-    :param matrix_l:
-    :return:
+    :param matrix_l: similarity matrix
+    :return: left and right borders of the peak similarity
     """
     points_dict = {}
 
@@ -98,8 +100,8 @@ def make_plt_rows(matrix_l):
 def make_plt_columns(matrix_l):
     """
     Make plot of columns
-    :param matrix_l:
-    :return:
+    :param matrix_l: similarity matrix
+    :return: left and right borders of the peak similarity
     """
     points_dict = {}
     for j in range(max(matrix_l.shape[0], matrix_l.shape[1])):
@@ -318,7 +320,7 @@ def create_lance_table(table_name: str, vector_dim) -> lancedb.DBConnection:
     return db
 
 
-def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector, segments, filenames: list) -> None:
+def append_vector_to_table(db: lancedb.DBConnection, table_name: str, vector: np.ndarray, segments: list, filenames: list) -> None:
     """
     append vector of embeddings to table
     :param db: lancedb connection
@@ -373,56 +375,116 @@ def find_license_by_pirate_name(df: pd.DataFrame, file_name: str):
 
 def f1_for_all_search(model, feature_extractor, database, threshold: float) -> float:
     """
-    calculate f1 for all search video
-    :param model: model like vit transformer
+    Calculate F1 score for all search videos.
+    :param model: model like VIT transformer
     :param feature_extractor: model like ViTFeatureExtractor
     :param database: database connection
     :param threshold: threshold for confidence of the found video
-    :return:
+    :return: F1 score
     """
-    true_positives = 0
-    false_positives = 0
-    false_negatives = 0
     table_video = database.open_table("video_embeddings")
     table_audio = database.open_table("audio_embeddings")
     threshold_video = 0.6
     threshold_audio = 0.08
     csv_path = "piracy_val.csv"
-    ground_truth = pd.DataFrame(pd.read_csv(csv_path))
+    ground_truth = pd.read_csv(csv_path)
     pirate_video = "val/"
-    pirate_files = os.listdir(pirate_video)
-    for file in pirate_files:
-        percent_dict = {}
-        if file.endswith(".mp4"):
-            dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
-            for batch in dict_data["video"]:
-                result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-                if result[0]["_distance"] < threshold_video:
-                    if not percent_dict.get(result[0]["filename"]):
-                        percent_dict[result[0]["filename"]] = 1
-                    else:
-                        percent_dict[result[0]["filename"]] += 1
-            for batch in dict_data["audio"]:
-                result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
-                if result[0]["_distance"] < threshold_audio:
-                    if not percent_dict.get(result[0]["filename"]):
-                        percent_dict[result[0]["filename"]] = 1
-                    else:
-                        percent_dict[result[0]["filename"]] += 1
-            for key, _ in percent_dict.items():
-                percent_dict[key] = percent_dict[key] / (len(dict_data["video"] * 2))
-            predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
-            if percent_dict[predicted_license_video] < threshold:
-                predicted_license_video = None
-            if predicted_license_video is None:
-                false_negatives += 1
-            else:
-                true_license_id = find_license_by_pirate_name(ground_truth, file)
-                if predicted_license_video == true_license_id:
-                    true_positives += 1
-                else:
-                    false_positives += 1
+    pirate_files = [f for f in os.listdir(pirate_video) if f.endswith(".mp4")]
+
+    true_positives = 0
+    false_positives = 0
+    false_negatives = 0
+
+    def process_file(file):
+        percent_dict = defaultdict(int)
+        print(f"Processing {file}")
+        dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
+
+        for batch in dict_data["video"]:
+            result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+            if result[0]["_distance"] < threshold_video:
+                percent_dict[result[0]["filename"]] += 1
+
+        for batch in dict_data["audio"]:
+            result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+            if result[0]["_distance"] < threshold_audio:
+                percent_dict[result[0]["filename"]] += 1
+
+        for key in percent_dict:
+            percent_dict[key] = percent_dict[key] / (len(dict_data["video"]) * 2)
+
+        predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1))[0]
+        if percent_dict[predicted_license_video] < threshold:
+            predicted_license_video = None
+
+        true_license_id = find_license_by_pirate_name(ground_truth, file)
+        if predicted_license_video is None:
+            return 0, 0, 1
+        elif predicted_license_video == true_license_id:
+            return 1, 0, 0
+        else:
+            return 0, 1, 0
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(process_file, file) for file in pirate_files]
+        for future in as_completed(futures):
+            tp, fp, fn = future.result()
+            true_positives += tp
+            false_positives += fp
+            false_negatives += fn
+
     return calculate_f1_score(true_positives, false_positives, false_negatives)
+    # true_positives = 0
+    # false_positives = 0
+    # false_negatives = 0
+    # table_video = database.open_table("video_embeddings")
+    # table_audio = database.open_table("audio_embeddings")
+    # threshold_video = 0.6
+    # threshold_audio = 0.08
+    # csv_path = "piracy_val.csv"
+    # ground_truth = pd.DataFrame(pd.read_csv(csv_path))
+    # pirate_video = "val/"
+    # pirate_files = [file for file in os.listdir(pirate_video) if file.endswith(".mp4")]
+    #
+    # def process_file(file):
+    #     percent_dict = {}
+    #     dict_data = get_video_embeddings(os.path.join(pirate_video, file), model, feature_extractor)
+    #
+    #     for batch in dict_data["video"]:
+    #         result = table_video.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+    #         if result[0]["_distance"] < threshold_video:
+    #             percent_dict[result[0]["filename"]] = percent_dict.get(result[0]["filename"], 0) + 1
+    #
+    #     for batch in dict_data["audio"]:
+    #         result = table_audio.search(batch, vector_column_name="vector").metric("cosine").limit(10).to_list()
+    #         if result[0]["_distance"] < threshold_audio:
+    #             percent_dict[result[0]["filename"]] = percent_dict.get(result[0]["filename"], 0) + 1
+    #
+    #     for key in percent_dict.keys():
+    #         percent_dict[key] = percent_dict[key] / (len(dict_data["video"]) * 2)
+    #
+    #     predicted_license_video = max(percent_dict.items(), key=operator.itemgetter(1), default=(None, 0))[0]
+    #     if percent_dict.get(predicted_license_video, 0) < threshold:
+    #         predicted_license_video = None
+    #
+    #     true_license_id = find_license_by_pirate_name(ground_truth, file)
+    #
+    #     if predicted_license_video is None:
+    #         return (0, 0, 1)  # false_negative
+    #     elif predicted_license_video == true_license_id:
+    #         return (1, 0, 0)  # true_positive
+    #     else:
+    #         return (0, 1, 0)  # false_positive
+    #
+    # with ProcessPoolExecutor() as executor:
+    #     results = list(executor.map(process_file, pirate_files))
+    #
+    # for tp, fp, fn in results:
+    #     true_positives += tp
+    #     false_positives += fp
+    #     false_negatives += fn
+    #
+    # return calculate_f1_score(true_positives, false_positives, false_negatives)
 
 
 def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l) -> lancedb.DBConnection:
@@ -456,6 +518,8 @@ def get_embeddings_for_directory(directory: str, model_l, feature_extractor_l) -
             with open("indexed_files.json", "w", encoding="utf-8") as f:
                 json.dump(indexed_files, f, indent=4)
                 print(f"Indexed {file}")
+    if database is None:
+        database = lancedb.connect("data/")
     return database
 
 
