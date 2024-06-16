@@ -57,6 +57,10 @@ def make_plt_rows(matrix_l, plt_verbose = False):
     elif peaks[max_width_idx]:  #and widths_half_max[0][max_peak_idx] > 50:
         left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
+    else:
+        left_ips_x = 0
+        right_ips_x = 0
+        return {"interval" : ""}
     if plt_verbose:
         plt.plot(x_smooth, y_smooth)
         plt.xlabel('Index of Minimum Cosine Distance')
@@ -118,6 +122,10 @@ def make_plt_columns(matrix_l, plt_verbose = False ):
     elif peaks[max_width_idx]:  #and widths_half_max[0][max_peak_idx] > 50#:
         left_ips_x = x_smooth[int(widths_half_max[2][max_peak_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_peak_idx])]
+    else:
+        left_ips_x = 0
+        right_ips_x = 0
+        return {"interval" :""}
 
     if plt_verbose:
         plt.plot(x_smooth, y_smooth)
