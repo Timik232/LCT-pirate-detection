@@ -54,7 +54,7 @@ def make_plt_rows(matrix_l, plt_verbose=False):
     if peaks[max_peak_idx] == peaks[max_width_idx]:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
-    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.25:
+    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.3:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
     else:
@@ -120,7 +120,7 @@ def make_plt_columns(matrix_l, plt_verbose=False):
     if peaks[max_peak_idx] == peaks[max_width_idx]:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
-    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.25:
+    elif peaks[max_width_idx] and y_smooth[peaks][max_width_idx] > 0.3:
         left_ips_x = x_smooth[int(widths_half_max[2][max_width_idx])]
         right_ips_x = x_smooth[int(widths_half_max[3][max_width_idx])]
     else:
