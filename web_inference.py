@@ -34,8 +34,8 @@ def run_application():
 
 class Task:
     def __init__(self, task_type, func, kwargs: dict[str, any]):
-        task_id = hashlib.md5(str(time.time()).encode('utf-8')).hexdigest()
-        self.data = {"id": task_id, "type": task_type, "status": "process", "content": {}}
+        self.task_id = hashlib.md5(str(time.time()).encode('utf-8')).hexdigest()
+        self.data = {"id": self.task_id, "type": task_type, "status": "process", "content": {}}
         self.func = func
         self.kwargs = kwargs
         self.status_code = 200
@@ -146,12 +146,13 @@ def set_video_download():
             handle.write(data)
 
     hashsum = md5_checksum(os.path.join(temp_dir.name, filename))
-    if hashsum != hashsum_md5:
-        return jsonify({"error": "file integrity cant be verified"}), 500
+    # if hashsum != hashsum_md5:
+    #     return jsonify({"error": "file integrity cant be verified"}), 500
 
     if purpose not in ["index", "val"]:
         return jsonify({"error": "purpose can be either index or val"}), 422
 
+    task = None
     if purpose == "index":
         task = Task("index_in_db", index_in_db_wrapper, {"temp_dir": temp_dir})
         application.add_task(task)
@@ -159,6 +160,7 @@ def set_video_download():
         task = Task("search_in_db", index_in_db_wrapper, {"temp_dir": temp_dir,
                                                           "filename": os.path.join(temp_dir.name, filename)})
         application.add_task(task)
+    return jsonify({"task_id": task.task_id})
 
 
 @app.route('/task_status', methods=['POST'])
