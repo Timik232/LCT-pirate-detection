@@ -95,6 +95,8 @@ class MainApplication:
                 continue
             else:
                 result_peaks_rows = make_plt_rows(matrix)
+                if result_peaks_columns["interval"] == "":
+                    continue
                 interval1 = result_peaks_columns["interval"]
                 interval2 = result_peaks_rows["interval"]
                 intervals = f"{interval1} {interval2}"
